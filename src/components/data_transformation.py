@@ -17,9 +17,10 @@ from src.utils import save_object
 
 @dataclass
 class DataTransformationConfig:
-    preprocessor_obj_file_path=os.path.join('artifacts',"proprocessor.pkl")
+    preprocessor_obj_file_path = os.path.join('artifacts', "preprocessor.pkl")
 
-class Winsorizer(BaseEstimator, TransformerMixin):
+class Winsorizer:
+    """Custom Winsorizer transformer compatible with sklearn Pipeline"""
     def __init__(self, limits=[0, 0.02]):
         self.limits = limits
 
@@ -29,7 +30,7 @@ class Winsorizer(BaseEstimator, TransformerMixin):
     def transform(self, X):
         X = X.copy()
         for col in X.columns:
-            X[col] = winsorize(X[col], limits=self.limits)
+            X[col] = winsorize(X[col].values, limits=self.limits)
         return X
 
     def get_feature_names_out(self, input_features=None):
@@ -37,108 +38,60 @@ class Winsorizer(BaseEstimator, TransformerMixin):
 
 class DataTransformation:
     def __init__(self):
-        self.data_transformation_config=DataTransformationConfig()
+        self.config = DataTransformationConfig()
 
     def get_data_transformer_object(self):
-        '''
-        This function is responsible for data trnasformation
-        
-        '''
         try:
-            robust_cols= [
-                "creatinine_phosphokinase",
-                "serum_creatinine",
-                "platelets",
-            ]
-            standard_cols=[
-                "age",
-                "ejection_fraction",
-                "serum_sodium",
-                "time",
-            ]
+            # Columns
+            robust_cols = ["creatinine_phosphokinase", "serum_creatinine", "platelets"]
+            standard_cols = ["age", "ejection_fraction", "serum_sodium", "time"]
 
-            standard_pipeline= Pipeline(
-                steps=[
-                ("standard",StandardScaler())
-                ]
-            )
+            # Pipelines
+            robust_pipeline = Pipeline([
+                ("winsorize", Winsorizer(limits=[0,0.02])),
+                ("robust_scaler", RobustScaler())
+            ])
+            standard_pipeline = Pipeline([
+                ("standard_scaler", StandardScaler())
+            ])
 
-            robust_pipeline=Pipeline(
-
-                steps=[
-                ("winsorize", Winsorizer(limits=[0, 0.02])),
-                ("robust",RobustScaler())
-                ]
-
-            )
-
-            logging.info(f"Robust columns: {robust_cols}")
-            logging.info(f"Standard columns: {standard_cols}")
-
-            preprocessor=ColumnTransformer(
-
-                [
-                ("standard_pipeline",standard_pipeline,standard_cols),
-                ("robust_pipeline",robust_pipeline,robust_cols)
-                ],
-                remainder="passthrough"
-            )
-            
+            preprocessor = ColumnTransformer([
+                ("standard_pipeline", standard_pipeline, standard_cols),
+                ("robust_pipeline", robust_pipeline, robust_cols)
+            ], remainder="passthrough")  # keep binary columns as is
 
             return preprocessor
-        
         except Exception as e:
-            raise CustomException(e,sys)
-        
-    def initiate_data_transformation(self,train_path,test_path):
+            raise CustomException(e, sys)
 
+    def initiate_data_transformation(self, train_path, test_path):
         try:
-            train_df=pd.read_csv(train_path)
-            test_df=pd.read_csv(test_path)
-
+            # Read
+            train_df = pd.read_csv(train_path)
+            test_df = pd.read_csv(test_path)
             logging.info("Read train and test data completed")
 
-            logging.info("Obtaining preprocessing object")
+            preprocessing_obj = self.get_data_transformer_object()
+            target_col = "DEATH_EVENT"
 
-            preprocessing_obj=self.get_data_transformer_object()
+            # Separate features & target
+            X_train = train_df.drop(columns=[target_col])
+            y_train = train_df[target_col]
+            X_test = test_df.drop(columns=[target_col])
+            y_test = test_df[target_col]
 
-            target_column_name="DEATH_EVENT"
+            # Fit transform
+            X_train_arr = preprocessing_obj.fit_transform(X_train)
+            X_test_arr = preprocessing_obj.transform(X_test)
 
-            input_feature_train_df=train_df.drop(columns=[target_column_name])
-            target_feature_train_df=train_df[target_column_name]
+            # Combine back with target for consistency
+            train_arr = np.c_[X_train_arr, y_train.to_numpy()]
+            test_arr = np.c_[X_test_arr, y_test.to_numpy()]
 
-            input_feature_test_df=test_df.drop(columns=[target_column_name])
-            target_feature_test_df=test_df[target_column_name]
+            # Save preprocessor
+            save_object(file_path=self.config.preprocessor_obj_file_path,
+                        obj=preprocessing_obj)
 
-            logging.info(
-                f"Applying preprocessing object on training dataframe and testing dataframe."
-            )
-
-            input_feature_train_arr=preprocessing_obj.fit_transform(input_feature_train_df)
-            input_feature_test_arr=preprocessing_obj.transform(input_feature_test_df)
-
-            logging.info(
-                f"Preprocessor columns order: {preprocessing_obj.get_feature_names_out()}"
-            )
-
-            train_arr = np.c_[
-                input_feature_train_arr, np.array(target_feature_train_df)
-            ]
-            test_arr = np.c_[input_feature_test_arr, np.array(target_feature_test_df)]
-
-            logging.info(f"Saved preprocessing object.")
-
-            save_object(
-
-                file_path=self.data_transformation_config.preprocessor_obj_file_path,
-                obj=preprocessing_obj
-
-            )
-
-            return (
-                train_arr,
-                test_arr,
-                self.data_transformation_config.preprocessor_obj_file_path,
-            )
+            return train_arr, test_arr, self.config.preprocessor_obj_file_path
         except Exception as e:
-            raise CustomException(e,sys)
+            raise CustomException(e, sys)
