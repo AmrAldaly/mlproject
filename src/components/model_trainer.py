@@ -26,7 +26,7 @@ class ModelTrainer:
             X_train, y_train = train_array[:, :-1], train_array[:, -1]
             X_test, y_test = test_array[:, :-1], test_array[:, -1]
 
-            # Tuned model exactly from notebook
+            
             model = HistGradientBoostingClassifier(
                 learning_rate=0.05,
                 max_depth=4,
@@ -38,7 +38,7 @@ class ModelTrainer:
 
             model.fit(X_train, y_train)
 
-            # Custom threshold from notebook
+            # Custom threshold 
             probabilities = model.predict_proba(X_test)[:, 1]
             threshold = 0.25
             y_pred_custom = (probabilities >= threshold).astype(int)
