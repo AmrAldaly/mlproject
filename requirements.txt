@@ -3,7 +3,8 @@ numpy
 seaborn
 scikit-learn
 scipy
-xgboost
+xgboost==1.7.6
 dill
 flask
+gunicorn
 #-e .
