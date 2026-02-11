@@ -28,7 +28,7 @@ Cloud deployment on AWS / Azure
 
 The project is structured into independent components:
 
-###Data Ingestion
+### Data Ingestion
 
 Reads raw dataset
 
